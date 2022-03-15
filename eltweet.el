@@ -26,6 +26,7 @@
 
 (require 'json)
 
+;;;###autoload
 (defun eltweet-quote (uri)
   "Get a tweet blockquote via the Twitter APIs with just the URL (as URI)."
   (interactive "sEnter URL: ")
