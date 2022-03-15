@@ -1,2 +1,5 @@
 # eltweet
-Quote a tweet properly
+
+![screencast](quote-tweets-with-emacs.gif)
+
+Quote tweets properly
