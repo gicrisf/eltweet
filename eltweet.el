@@ -36,6 +36,7 @@
                                        (when (fboundp 'url-http--insert-file-helper)
                                          (url-http--insert-file-helper buffer uri))
                                        buffer)
+                  (set-buffer-multibyte t)
                   (goto-char (point-min))
                   (re-search-forward "^$")
                   (json-read))))
