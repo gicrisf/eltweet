@@ -28,18 +28,18 @@
 
 ;;;###autoload
 (defun eltweet-quote (uri)
-  "Get a tweet blockquote via the Twitter APIs with just the URL (as URI)."
+  "Quote a tweet with just the URI."
   (interactive "sEnter URL: ")
-  (setq uri (concat "https://publish.twitter.com/oembed?url=" (url-hexify-string uri) "&omit_script=true"))
-  (let ((parsed (with-current-buffer (let ((buffer (url-retrieve-synchronously uri)))
-                                       (unless buffer (signal 'file-error (list uri "no data")))
-                                       (when (fboundp 'url-http--insert-file-helper)
-                                         (url-http--insert-file-helper buffer uri))
-                                       buffer)
-                  (set-buffer-multibyte t)
-                  (goto-char (point-min))
-                  (re-search-forward "^$")
-                  (json-read))))
+  (let* ((uri (concat "https://publish.twitter.com/oembed?url=" (url-hexify-string uri) "&omit_script=true"))
+         (parsed (with-current-buffer (let ((buffer (url-retrieve-synchronously uri)))
+                                        (unless buffer (signal 'file-error (list uri "no data")))
+                                        (when (fboundp 'url-http--insert-file-helper)
+                                          (url-http--insert-file-helper buffer uri))
+                                        buffer)
+                   (set-buffer-multibyte t)
+                   (goto-char (point-min))
+                   (re-search-forward "^$")
+                   (json-read))))
     (insert (cdr (assq 'html parsed))))
   (message "Here is your tweet!"))
 
