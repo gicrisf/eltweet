@@ -6,7 +6,7 @@
 ;; Maintainer: gicrisf <giovanni.crisalfi@protonmail.com>
 ;; Created: marzo 15, 2022
 ;; Modified: marzo 15, 2022
-;; Version: 0.0.6
+;; Version: 0.0.7
 ;; Keywords: abbrev hypermedia tweet twitter social blog
 ;; Homepage: https://github.com/cromo/eltweet
 ;; Package-Requires: ((emacs "27.1"))
@@ -98,31 +98,6 @@
   "Extract the href value of a parsed LINK."
   (cdr (car (car (cdr link)))))
 
-(defun eltweet--orgwriter (strings links)
-  "Read into STRINGS and LINKS of a parsed tweet to write a well-formed Org one."
-  (when strings
-    (if (< (length strings) 3)
-        (when links
-          (if (= (length links) 1)
-              ;; 1 link left
-              (progn
-                (insert (concat "\n" (org-link-make-string (eltweet--get-href (car links)) (car strings))) "\n")
-                (eltweet--orgwriter (cdr strings) (cdr links)))
-            ;; links are not 1
-            (progn
-              (let ((link-href (eltweet--get-href (car links))))
-                (insert (concat (org-link-make-string link-href link-href) "\n")))
-              (eltweet--orgwriter strings (cdr links)))))
-      ;; Strings > 2 case
-      (let* ((body-string (car strings))
-             (type (url-type (url-generic-parse-url body-string))))
-        ;; Search for URLs
-        (if (or (equal type "https") (equal type "http"))
-            (message "Skipping URL %s" body-string)
-          ;; Print non-URL strings
-          (insert (concat body-string "\n")))
-        (eltweet--orgwriter (cdr strings) links)))))
-
 (defun eltweet--parse-html-string (html)
   "Parse an HTML string and return the parsed result."
   (with-temp-buffer
@@ -145,6 +120,66 @@
     (insert "#+end_quote\n")
     (eltweet--indent begin-position (point)))
   (message "Here is your tweet!"))
+
+(defun eltweet--tagger (str)
+  "Link da STR."
+  (when (> (length str) 2)
+    ;; user tag
+    (if (string-match-p "@" str)
+        (org-link-make-string (concat "https://twitter.com/" (replace-regexp-in-string "@" "" str)) str)
+      ;; hashtag
+      (if (string-match-p "#" str)
+          (org-link-make-string (concat "https://twitter.com/hashtag/" (replace-regexp-in-string "#" "" str)) str)))))
+
+(defun eltweet--orgwriter (strings links)
+  "Read into STRINGS and LINKS of a parsed tweet to write a well-formed Org one."
+  (when strings
+    ;; (message "Eltweet strings: %s" strings)
+    (if (< (length strings) 3)
+        (if links
+          ;; (message "Eltweet links: %s" links)
+          (if (= (length links) 1)
+              ;; A single link left;
+              (progn
+                (if (string-match "\\((@.+)\\)" (car strings))
+                  (insert
+                   (concat "\n\n"
+                           (replace-regexp-in-string "\\((@.+)\\)" (org-link-make-string (eltweet--get-href (car links)) (match-string 0 (car strings))) (car strings))))
+                  (message "Eltweet error: didn't find any user id in the signed line."))
+                (eltweet--orgwriter (cdr strings) (cdr links)))
+            ;; More then a link;
+            (progn
+              (let* ((link (car links))
+                     (link-href (eltweet--get-href link))
+                     (link-description (cadr (cdr link))))
+                (if (eltweet--tagger link-description)
+                    (message "Eltweet, discarding tag link: %s" link-description)
+                  (insert (concat "\n" (org-link-make-string link-href link-href)))))
+              (eltweet--orgwriter strings (cdr links))))
+          ;; The last string;
+          (insert (concat (car strings) "\n")))
+      ;; More then 2 strings;
+      (let* ((body-string (car strings))
+             (url-parsed (url-generic-parse-url body-string))
+             (type (url-type url-parsed))
+             (apex-url (if (not type) (url-generic-parse-url (concat "http://" body-string))))
+             (tagged (if (not type) (eltweet--tagger body-string))))
+        ;; Is the string a full-fledged URL?
+        (if (or (equal type "https")
+                (equal type "http"))
+            (message "Skipping URL %s" body-string)
+          ;; Is it an apex, maybe?
+          (if (equal (url-host apex-url) "pic.twitter.com")
+                (message "Eltweet: skipping fake URL image %s" body-string)
+              ;; Is the string some kind of tag?
+              (if tagged
+                  (progn
+                    (message "Eltweet: tag found %s" body-string)
+                    (insert tagged))
+                ;; Well, I guess it's a simple string, then.
+                ;; (message "Eltweet: well, simple string, then: %s" body-string)
+                (insert body-string))))
+        (eltweet--orgwriter (cdr strings) links)))))
 
 (provide 'eltweet)
 ;;; eltweet.el ends here
