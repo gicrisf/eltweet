@@ -6,7 +6,7 @@
 ;; Maintainer: gicrisf <giovanni.crisalfi@protonmail.com>
 ;; Created: marzo 15, 2022
 ;; Modified: marzo 15, 2022
-;; Version: 0.0.7
+;; Version: 0.0.8
 ;; Keywords: abbrev hypermedia tweet twitter social blog
 ;; Homepage: https://github.com/cromo/eltweet
 ;; Package-Requires: ((emacs "27.1"))
@@ -26,6 +26,9 @@
 
 (require 'json)
 (require 'org)
+(require 'url)
+(require 'dom)
+(require 'deferred)
 
 (defun eltweet--html-string-to-text (html)
   "Convert a HTML blockquote in simple text."
@@ -115,7 +118,7 @@
          (links (dom-by-tag html-tree 'a)))
     (insert "#+begin_quote\n")
     (insert (with-temp-buffer
-              (orgwriter strings links)
+              (eltweet--orgwriter strings links)
               (buffer-string)))
     (insert "#+end_quote\n")
     (eltweet--indent begin-position (point)))
@@ -180,6 +183,41 @@
                 ;; (message "Eltweet: well, simple string, then: %s" body-string)
                 (insert body-string))))
         (eltweet--orgwriter (cdr strings) links)))))
+
+(defun eltweet--deferred-quote-from-uri (uri)
+  "Get a tweet with just the URI, do it async."
+  (let ((uri (concat "https://publish.twitter.com/oembed?url=" (url-hexify-string uri) "&omit_script=true")))
+    (deferred:$
+      (deferred:url-retrieve uri)
+      (deferred:nextc it
+        (lambda (buffer)
+          (let ((parsed (with-current-buffer buffer
+                          (set-buffer-multibyte t)
+                          (goto-char (point-min))
+                          (re-search-forward "^$")
+                          (json-read))))
+            (kill-buffer buffer)
+            parsed)))
+      ;; potrei fare a meno di questo blocco, è solo per vedere che la variabile passa sotto
+      ;; noi vogliamo che questa funzione sia parte di altre chain deferred
+      ;; non sostituirò la precedente, farò un'altra serie di funzioni async
+      ;; (deferred:nextc it
+      ;;  (lambda (x)
+      ;;    x))
+      (deferred:error it
+        (lambda (err)
+          (message "%s" err))))))
+
+(defun eltweet-async-quote-as-html (uri)
+  "Quote a tweet in your buffer with just the URI, do it async."
+  (interactive "sEnter url: ")
+  (deferred:$
+    (eltweet--deferred-quote-from-uri uri)
+    (deferred:nextc it
+      (lambda (x)
+        (insert (cdr (assq 'html x)))))
+    (deferred:nextc it
+      (message "here is your tweet!"))))
 
 (provide 'eltweet)
 ;;; eltweet.el ends here
