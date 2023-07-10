@@ -6,7 +6,7 @@
 ;; Maintainer: gicrisf <giovanni.crisalfi@protonmail.com>
 ;; Created: marzo 15, 2022
 ;; Modified: marzo 15, 2022
-;; Version: 0.0.9
+;; Version: 0.1.0
 ;; Keywords: abbrev hypermedia tweet twitter social blog
 ;; Homepage: https://github.com/cromo/eltweet
 ;; Package-Requires: ((emacs "27.1"))
@@ -212,6 +212,47 @@
       (deferred:error it
         (lambda (err)
           (message "%s" err))))))
+
+(defun eltweet-async-quote-as-org (uri)
+  "Quote a tweet in your buffer with just the URI."
+  (interactive "sEnter url: ")
+  (deferred:$
+    (eltweet--deferred-quote-from-uri uri)
+    (deferred:nextc it
+      (lambda (parsed)
+        (let* ((html (cdr (assq 'html parsed)))
+         (html-tree (eltweet--parse-html-string html))
+         (begin-position (point))
+         (strings (dom-strings html-tree))
+         (links (dom-by-tag html-tree 'a)))
+    (insert "#+begin_quote\n")
+    (insert (with-temp-buffer
+              (eltweet--orgwriter strings links)
+              (buffer-string)))
+    (insert "#+end_quote\n")
+    (eltweet--indent begin-position (point)))))
+    (deferred:nextc it
+      (message "here is your tweet!"))
+    (deferred:error it
+        (lambda (err)
+          (message "%s" err)))))
+
+(defun eltweet-async-quote-as-simple-text (uri)
+  "Print a tweet in simple text with just the URI."
+  (interactive "sEnter URL: ")
+  (deferred:$
+    (eltweet--deferred-quote-from-uri uri)
+    (deferred:nextc it
+      (lambda (x)
+        (let ((html (cdr (assq 'html x)))
+              (begin-position (point)))
+          (insert (eltweet--html-string-to-text html))
+          (eltweet--indent begin-position (point)))))
+    (deferred:nextc it
+      (message "here is your tweet!"))
+    (deferred:error it
+      (lambda (err)
+        (message "%s" err)))))
 
 (provide 'eltweet)
 ;;; eltweet.el ends here
