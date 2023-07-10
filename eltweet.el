@@ -6,7 +6,7 @@
 ;; Maintainer: gicrisf <giovanni.crisalfi@protonmail.com>
 ;; Created: marzo 15, 2022
 ;; Modified: marzo 15, 2022
-;; Version: 0.0.8
+;; Version: 0.0.9
 ;; Keywords: abbrev hypermedia tweet twitter social blog
 ;; Homepage: https://github.com/cromo/eltweet
 ;; Package-Requires: ((emacs "27.1"))
@@ -66,20 +66,6 @@
             ;; Whether tab or space should be used is determined by indent-tabs-mode
             (funcall convert-white (line-beginning-position) (point))
             (setq ln (1+ ln))))))))
-
-(defun eltweet--quote-from-uri (uri)
-  "Get a tweet with just the URI."
-  (let* ((uri (concat "https://publish.twitter.com/oembed?url=" (url-hexify-string uri) "&omit_script=true"))
-         (parsed (with-current-buffer (let ((buffer (url-retrieve-synchronously uri)))
-                                        (unless buffer (signal 'file-error (list uri "no data")))
-                                        (when (fboundp 'url-http--insert-file-helper)
-                                          (url-http--insert-file-helper buffer uri))
-                                        buffer)
-                   (set-buffer-multibyte t)
-                   (goto-char (point-min))
-                   (re-search-forward "^$")
-                   (json-read))))
-    parsed))
 
 (defun eltweet-quote-as-html (uri)
   "Quote a tweet in your buffer with just the URI."
@@ -184,30 +170,6 @@
                 (insert body-string))))
         (eltweet--orgwriter (cdr strings) links)))))
 
-(defun eltweet--deferred-quote-from-uri (uri)
-  "Get a tweet with just the URI, do it async."
-  (let ((uri (concat "https://publish.twitter.com/oembed?url=" (url-hexify-string uri) "&omit_script=true")))
-    (deferred:$
-      (deferred:url-retrieve uri)
-      (deferred:nextc it
-        (lambda (buffer)
-          (let ((parsed (with-current-buffer buffer
-                          (set-buffer-multibyte t)
-                          (goto-char (point-min))
-                          (re-search-forward "^$")
-                          (json-read))))
-            (kill-buffer buffer)
-            parsed)))
-      ;; potrei fare a meno di questo blocco, è solo per vedere che la variabile passa sotto
-      ;; noi vogliamo che questa funzione sia parte di altre chain deferred
-      ;; non sostituirò la precedente, farò un'altra serie di funzioni async
-      ;; (deferred:nextc it
-      ;;  (lambda (x)
-      ;;    x))
-      (deferred:error it
-        (lambda (err)
-          (message "%s" err))))))
-
 (defun eltweet-async-quote-as-html (uri)
   "Quote a tweet in your buffer with just the URI, do it async."
   (interactive "sEnter url: ")
@@ -218,6 +180,38 @@
         (insert (cdr (assq 'html x)))))
     (deferred:nextc it
       (message "here is your tweet!"))))
+
+(defun eltweet--parse-json-buffer (buffer)
+  (let ((parsed (with-current-buffer buffer
+                  (set-buffer-multibyte t)
+                  (goto-char (point-min))
+                  (re-search-forward "^$")
+                  (json-read))))
+    (kill-buffer buffer)
+    parsed))
+
+(defun eltweet--quote-from-uri (uri)
+  "Get a tweet with just the URI."
+  (let* ((uri (concat "https://publish.twitter.com/oembed?url=" (url-hexify-string uri) "&omit_script=true"))
+         (parsed (eltweet--parse-json-buffer
+                  (let ((buffer (url-retrieve-synchronously uri)))
+                    (unless buffer (signal 'file-error (list uri "no data")))
+                    (when (fboundp 'url-http--insert-file-helper)
+                      (url-http--insert-file-helper buffer uri))
+                    buffer))))
+    parsed))
+
+(defun eltweet--deferred-quote-from-uri (uri)
+  "Get a tweet with just the URI, do it async."
+  (let ((uri (concat "https://publish.twitter.com/oembed?url=" (url-hexify-string uri) "&omit_script=true")))
+    (deferred:$
+      (deferred:url-retrieve uri)
+      (deferred:nextc it
+        (lambda (buffer)
+          (eltweet--parse-json-buffer buffer)))
+      (deferred:error it
+        (lambda (err)
+          (message "%s" err))))))
 
 (provide 'eltweet)
 ;;; eltweet.el ends here
