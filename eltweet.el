@@ -6,7 +6,7 @@
 ;; Maintainer: gicrisf <giovanni.crisalfi@protonmail.com>
 ;; Created: marzo 15, 2022
 ;; Modified: marzo 15, 2022
-;; Version: 0.1.0
+;; Version: 0.1.1
 ;; Keywords: abbrev hypermedia tweet twitter social blog
 ;; Homepage: https://github.com/cromo/eltweet
 ;; Package-Requires: ((emacs "27.1"))
@@ -67,22 +67,6 @@
             (funcall convert-white (line-beginning-position) (point))
             (setq ln (1+ ln))))))))
 
-(defun eltweet-quote-as-html (uri)
-  "Quote a tweet in your buffer with just the URI."
-  (interactive "sEnter url: ")
-  (insert (cdr (assq 'html (eltweet--quote-from-uri uri))))
-  (message "here is your tweet!"))
-
-(defun eltweet-quote-as-simple-text (uri)
-  "Print a tweet in simple text with just the URI."
-  (interactive "sEnter URL: ")
-  (let ((html (cdr (assq 'html (eltweet--quote-from-uri uri))))
-        (begin-position (point)))
-    ;; (insert "#+begin_quote\n")
-    (insert (eltweet--html-string-to-text html))
-    ;; (insert "#+end_quote\n")
-    (eltweet--indent begin-position (point))))
-
 (defun eltweet--get-href (link)
   "Extract the href value of a parsed LINK."
   (cdr (car (car (cdr link)))))
@@ -92,23 +76,6 @@
   (with-temp-buffer
     (insert html)
     (libxml-parse-html-region (point-min) (point-max))))
-
-(defun eltweet-quote-as-org (uri)
-  "Quote a tweet in your buffer with just the URI."
-  (interactive "sEnter url: ")
-  ;; (insert (cdr (assq 'html (eltweet--quote-from-uri uri))))
-  (let* ((html (cdr (assq 'html (eltweet--quote-from-uri uri))))
-         (html-tree (eltweet--parse-html-string html))
-         (begin-position (point))
-         (strings (dom-strings html-tree))
-         (links (dom-by-tag html-tree 'a)))
-    (insert "#+begin_quote\n")
-    (insert (with-temp-buffer
-              (eltweet--orgwriter strings links)
-              (buffer-string)))
-    (insert "#+end_quote\n")
-    (eltweet--indent begin-position (point)))
-  (message "Here is your tweet!"))
 
 (defun eltweet--tagger (str)
   "Link da STR."
@@ -170,18 +137,8 @@
                 (insert body-string))))
         (eltweet--orgwriter (cdr strings) links)))))
 
-(defun eltweet-async-quote-as-html (uri)
-  "Quote a tweet in your buffer with just the URI, do it async."
-  (interactive "sEnter url: ")
-  (deferred:$
-    (eltweet--deferred-quote-from-uri uri)
-    (deferred:nextc it
-      (lambda (x)
-        (insert (cdr (assq 'html x)))))
-    (deferred:nextc it
-      (message "here is your tweet!"))))
-
 (defun eltweet--parse-json-buffer (buffer)
+  "Retrieve parsed json from BUFFER."
   (let ((parsed (with-current-buffer buffer
                   (set-buffer-multibyte t)
                   (goto-char (point-min))
@@ -213,41 +170,110 @@
         (lambda (err)
           (message "%s" err))))))
 
-(defun eltweet-async-quote-as-org (uri)
+(defun eltweet--insert-as-html (tweet-list)
+  "Get a TWEET-LIST and print every element as html."
+  (if (null tweet-list)
+      (message "Eltweet: no more tweets left to print.")
+    (insert (cdr (assq 'html (car tweet-list))))
+    ;; add some space if the thread is still going
+    (when (> (length tweet-list) 1)
+      (insert "\n"))
+    (eltweet--insert-as-html (cdr tweet-list))))
+
+(defun eltweet-quote-as-html (uri)
   "Quote a tweet in your buffer with just the URI."
+  (interactive "sEnter url: ")
+  (let ((tw-list (list (eltweet--quote-from-uri uri))))
+    (eltweet--insert-as-html tw-list))
+  (message "Eltweet: here is your tweet!"))
+
+(defun eltweet-async-quote-as-html (uri)
+  "Quote a tweet in your buffer with just the URI, do it async."
   (interactive "sEnter url: ")
   (deferred:$
     (eltweet--deferred-quote-from-uri uri)
     (deferred:nextc it
-      (lambda (parsed)
-        (let* ((html (cdr (assq 'html parsed)))
-         (html-tree (eltweet--parse-html-string html))
-         (begin-position (point))
-         (strings (dom-strings html-tree))
-         (links (dom-by-tag html-tree 'a)))
-    (insert "#+begin_quote\n")
-    (insert (with-temp-buffer
-              (eltweet--orgwriter strings links)
-              (buffer-string)))
-    (insert "#+end_quote\n")
-    (eltweet--indent begin-position (point)))))
+      (lambda (x)
+        (let ((tw-list (list x)))
+          (eltweet--insert-as-html tw-list))))
     (deferred:nextc it
       (message "here is your tweet!"))
     (deferred:error it
-        (lambda (err)
-          (message "%s" err)))))
+      (lambda (err)
+        (message "%s" err)))))
 
-(defun eltweet-async-quote-as-simple-text (uri)
-  "Print a tweet in simple text with just the URI."
-  (interactive "sEnter URL: ")
+(defun eltweet--insert-as-simple-text (tweet-list)
+  "Get a TWEET-LIST and print every element as html."
+  (if (null tweet-list)
+      (message "Eltweet: no more tweets left to print.")
+    (let ((begin-position (point))
+          (html (cdr (assq 'html (car tweet-list)))))
+      (insert (eltweet--html-string-to-text html))
+      (eltweet--indent begin-position (point)))
+
+    ;; add some space if the thread is still going
+    (when (> (length tweet-list) 1)
+      (insert "\n"))
+    (eltweet--insert-as-simple-text (cdr tweet-list))))
+
+(defun eltweet-quote-as-simple-text (uri)
+  "Quote a tweet in your buffer with just the URI."
+  (interactive "sEnter url: ")
+  (let ((tw-list (list (eltweet--quote-from-uri uri))))
+    (eltweet--insert-as-simple-text tw-list))
+  (message "Eltweet: here is your tweet!"))
+
+(defun eltweet-async-quote-as-single-text (uri)
+  "Quote a tweet in your buffer with just the URI, do it async."
+  (interactive "sEnter url: ")
   (deferred:$
     (eltweet--deferred-quote-from-uri uri)
     (deferred:nextc it
       (lambda (x)
-        (let ((html (cdr (assq 'html x)))
-              (begin-position (point)))
-          (insert (eltweet--html-string-to-text html))
-          (eltweet--indent begin-position (point)))))
+        (let ((tw-list (list x)))
+          (eltweet--insert-as-simple-text tw-list))))
+    (deferred:nextc it
+      (message "here is your tweet!"))
+    (deferred:error it
+      (lambda (err)
+        (message "%s" err)))))
+
+(defun eltweet--insert-as-org (tweet-list)
+  "Get a TWEET-LIST and print every element as html."
+  (if (null tweet-list)
+      (message "Eltweet: no more tweets left to print.")
+    (let* ((html (cdr (assq 'html (car tweet-list))))
+           (html-tree (eltweet--parse-html-string html))
+           (begin-position (point))
+           (strings (dom-strings html-tree))
+           (links (dom-by-tag html-tree 'a)))
+      (insert "#+begin_quote\n")
+      (insert (with-temp-buffer
+                (eltweet--orgwriter strings links)
+                (buffer-string)))
+      (insert "#+end_quote\n")
+      (eltweet--indent begin-position (point)))
+    ;; add some space if the thread is still going
+    (when (> (length tweet-list) 1)
+      (insert "\n"))
+    (eltweet--insert-as-org (cdr tweet-list))))
+
+(defun eltweet-quote-as-org (uri)
+  "Quote a tweet in your buffer with just the URI."
+  (interactive "sEnter url: ")
+  (let ((tw-list (list (eltweet--quote-from-uri uri))))
+    (eltweet--insert-as-org tw-list))
+  (message "Eltweet: here is your tweet!"))
+
+(defun eltweet-async-quote-as-org (uri)
+  "Quote a tweet in your buffer with just the URI, do it async."
+  (interactive "sEnter url: ")
+  (deferred:$
+    (eltweet--deferred-quote-from-uri uri)
+    (deferred:nextc it
+      (lambda (x)
+        (let ((tw-list (list x)))
+          (eltweet--insert-as-org tw-list))))
     (deferred:nextc it
       (message "here is your tweet!"))
     (deferred:error it
