@@ -6,7 +6,7 @@
 ;; Maintainer: gicrisf <giovanni.crisalfi@protonmail.com>
 ;; Created: marzo 15, 2022
 ;; Modified: marzo 15, 2022
-;; Version: 0.1.1
+;; Version: 0.1.2
 ;; Keywords: abbrev hypermedia tweet twitter social blog
 ;; Homepage: https://github.com/cromo/eltweet
 ;; Package-Requires: ((emacs "27.1"))
@@ -180,28 +180,6 @@
       (insert "\n"))
     (eltweet--insert-as-html (cdr tweet-list))))
 
-(defun eltweet-quote-as-html (uri)
-  "Quote a tweet in your buffer with just the URI."
-  (interactive "sEnter url: ")
-  (let ((tw-list (list (eltweet--quote-from-uri uri))))
-    (eltweet--insert-as-html tw-list))
-  (message "Eltweet: here is your tweet!"))
-
-(defun eltweet-async-quote-as-html (uri)
-  "Quote a tweet in your buffer with just the URI, do it async."
-  (interactive "sEnter url: ")
-  (deferred:$
-    (eltweet--deferred-quote-from-uri uri)
-    (deferred:nextc it
-      (lambda (x)
-        (let ((tw-list (list x)))
-          (eltweet--insert-as-html tw-list))))
-    (deferred:nextc it
-      (message "here is your tweet!"))
-    (deferred:error it
-      (lambda (err)
-        (message "%s" err)))))
-
 (defun eltweet--insert-as-simple-text (tweet-list)
   "Get a TWEET-LIST and print every element as html."
   (if (null tweet-list)
@@ -215,28 +193,6 @@
     (when (> (length tweet-list) 1)
       (insert "\n"))
     (eltweet--insert-as-simple-text (cdr tweet-list))))
-
-(defun eltweet-quote-as-simple-text (uri)
-  "Quote a tweet in your buffer with just the URI."
-  (interactive "sEnter url: ")
-  (let ((tw-list (list (eltweet--quote-from-uri uri))))
-    (eltweet--insert-as-simple-text tw-list))
-  (message "Eltweet: here is your tweet!"))
-
-(defun eltweet-async-quote-as-single-text (uri)
-  "Quote a tweet in your buffer with just the URI, do it async."
-  (interactive "sEnter url: ")
-  (deferred:$
-    (eltweet--deferred-quote-from-uri uri)
-    (deferred:nextc it
-      (lambda (x)
-        (let ((tw-list (list x)))
-          (eltweet--insert-as-simple-text tw-list))))
-    (deferred:nextc it
-      (message "here is your tweet!"))
-    (deferred:error it
-      (lambda (err)
-        (message "%s" err)))))
 
 (defun eltweet--insert-as-org (tweet-list)
   "Get a TWEET-LIST and print every element as html."
@@ -258,27 +214,75 @@
       (insert "\n"))
     (eltweet--insert-as-org (cdr tweet-list))))
 
+(defun eltweet--quote-as-x (uri &optional mode)
+  "Internal. Quote a tweet with just the URI and the MODE."
+  (let ((tw-list (list (eltweet--quote-from-uri uri)))
+        (insert-as-x (if mode (pcase mode
+                                ('html #'eltweet--insert-as-html)
+                                ('txt #'eltweet--insert-as-simple-text)
+                                ('org #'eltweet--insert-as-org))
+                       #'eltweet--insert-as-html)))
+    (funcall insert-as-x tw-list))
+  (message "Eltweet: here is your tweet!"))
+
+(defun eltweet--async-quote-as-x (uri &optional mode)
+  "Quote a tweet in your buffer with just the URI, do it async."
+  ;; it seems redundant, but it's necessary to pass the args in the chain
+  (lexical-let ((uri uri)
+                (mode mode))
+    (deferred:$
+      (eltweet--deferred-quote-from-uri uri)
+      (deferred:nextc it
+        (lambda (x)
+          (let ((tw-list (list x))
+                (insert-as-x (if mode (pcase mode
+                                        ('html #'eltweet--insert-as-html)
+                                        ('txt #'eltweet--insert-as-simple-text)
+                                        ('org #'eltweet--insert-as-org))
+                               #'eltweet--insert-as-html)))
+            (message "%s" insert-as-x)
+            (funcall insert-as-x tw-list))))
+      (deferred:nextc it
+        (message "here is your tweet!"))
+      (deferred:error it
+        (lambda (err)
+          (message "%s" err))))))
+
 (defun eltweet-quote-as-org (uri)
   "Quote a tweet in your buffer with just the URI."
   (interactive "sEnter url: ")
-  (let ((tw-list (list (eltweet--quote-from-uri uri))))
-    (eltweet--insert-as-org tw-list))
+  (eltweet--quote-as-x uri 'org)
   (message "Eltweet: here is your tweet!"))
 
 (defun eltweet-async-quote-as-org (uri)
-  "Quote a tweet in your buffer with just the URI, do it async."
+  "Quote a tweet in your buffer with just the URI."
   (interactive "sEnter url: ")
-  (deferred:$
-    (eltweet--deferred-quote-from-uri uri)
-    (deferred:nextc it
-      (lambda (x)
-        (let ((tw-list (list x)))
-          (eltweet--insert-as-org tw-list))))
-    (deferred:nextc it
-      (message "here is your tweet!"))
-    (deferred:error it
-      (lambda (err)
-        (message "%s" err)))))
+  (eltweet--async-quote-as-x uri 'org)
+  (message "Eltweet: here is your tweet!"))
+
+(defun eltweet-quote-as-simple-text (uri)
+  "Quote a tweet in your buffer with just the URI."
+  (interactive "sEnter url: ")
+  (eltweet--quote-as-x uri 'txt)
+  (message "Eltweet: here is your tweet!"))
+
+(defun eltweet-async-quote-as-simple-text (uri)
+  "Quote a tweet in your buffer with just the URI."
+  (interactive "sEnter url: ")
+  (eltweet--async-quote-as-x uri 'txt)
+  (message "Eltweet: here is your tweet!"))
+
+(defun eltweet-quote-as-html (uri)
+  "Quote a tweet in your buffer with just the URI."
+  (interactive "sEnter url: ")
+  (eltweet--quote-as-x uri 'html)
+  (message "Eltweet: here is your tweet!"))
+
+(defun eltweet-async-quote-as-html (uri)
+  "Quote a tweet in your buffer with just the URI."
+  (interactive "sEnter url: ")
+  (eltweet--async-quote-as-x uri 'html)
+  (message "Eltweet: here is your tweet!"))
 
 (provide 'eltweet)
 ;;; eltweet.el ends here
