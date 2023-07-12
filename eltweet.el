@@ -6,7 +6,7 @@
 ;; Maintainer: gicrisf <giovanni.crisalfi@protonmail.com>
 ;; Created: marzo 15, 2022
 ;; Modified: marzo 15, 2022
-;; Version: 0.1.2
+;; Version: 0.1.3
 ;; Keywords: abbrev hypermedia tweet twitter social blog
 ;; Homepage: https://github.com/cromo/eltweet
 ;; Package-Requires: ((emacs "27.1"))
@@ -24,6 +24,7 @@
 ;;
 ;;; Code:
 
+(eval-when-compile (require 'cl-lib))
 (require 'json)
 (require 'org)
 (require 'url)
@@ -214,40 +215,6 @@
       (insert "\n"))
     (eltweet--insert-as-org (cdr tweet-list))))
 
-(defun eltweet--quote-as-x (uri &optional mode)
-  "Internal. Quote a tweet with just the URI and the MODE."
-  (let ((tw-list (list (eltweet--quote-from-uri uri)))
-        (insert-as-x (if mode (pcase mode
-                                ('html #'eltweet--insert-as-html)
-                                ('txt #'eltweet--insert-as-simple-text)
-                                ('org #'eltweet--insert-as-org))
-                       #'eltweet--insert-as-html)))
-    (funcall insert-as-x tw-list))
-  (message "Eltweet: here is your tweet!"))
-
-(defun eltweet--async-quote-as-x (uri &optional mode)
-  "Quote a tweet in your buffer with just the URI, do it async."
-  ;; it seems redundant, but it's necessary to pass the args in the chain
-  (lexical-let ((uri uri)
-                (mode mode))
-    (deferred:$
-      (eltweet--deferred-quote-from-uri uri)
-      (deferred:nextc it
-        (lambda (x)
-          (let ((tw-list (list x))
-                (insert-as-x (if mode (pcase mode
-                                        ('html #'eltweet--insert-as-html)
-                                        ('txt #'eltweet--insert-as-simple-text)
-                                        ('org #'eltweet--insert-as-org))
-                               #'eltweet--insert-as-html)))
-            (message "%s" insert-as-x)
-            (funcall insert-as-x tw-list))))
-      (deferred:nextc it
-        (message "here is your tweet!"))
-      (deferred:error it
-        (lambda (err)
-          (message "%s" err))))))
-
 (defun eltweet-quote-as-org (uri)
   "Quote a tweet in your buffer with just the URI."
   (interactive "sEnter url: ")
@@ -283,6 +250,52 @@
   (interactive "sEnter url: ")
   (eltweet--async-quote-as-x uri 'html)
   (message "Eltweet: here is your tweet!"))
+
+(defun eltweet--insert-as-x (tw-list &optional mode)
+  "Insert in the buffer the parsed tweets in TW-LIST as X format.
+
+X can be specified with the optional argument MODE,
+which can be one of 'html, 'txt, or 'org.
+
+The parsed tweet is expected to be a list containing the parsed tweet data.
+
+The format for each X mode is as follows:
+  - 'html: The tweet will be inserted as HTML format.
+  - 'txt: The tweet will be inserted as simple text format.
+  - 'org: The tweet will be inserted as Org mode format.
+
+If MODE is not provided or is invalid, the tweet will be inserted as HTML."
+  (let ((insert-as-x (if mode (pcase mode
+                                ('html #'eltweet--insert-as-html)
+                                ('txt #'eltweet--insert-as-simple-text)
+                                ('org #'eltweet--insert-as-org))
+                       #'eltweet--insert-as-html)))
+    (funcall insert-as-x tw-list)))
+
+(defun eltweet--quote-as-x (uri &optional mode)
+  "Quote a tweet in your buffer synchronously.
+URI is the URL of the tweet you want to quote;
+MODE is an optional parameter specifying the major mode for the buffer."
+  (let ((tw-list (list (eltweet--quote-from-uri uri))))
+    (eltweet--insert-as-x tw-list mode)))
+
+(defun eltweet--async-quote-as-x (uri &optional mode)
+  "Quote a tweet in your buffer asynchronously.
+URI is the URL of the tweet you want to quote;
+MODE is an optional parameter specifying the major mode for the buffer."
+  ;; it seems redundant, but it's necessary to pass the args in the chain
+  (lexical-let ((uri uri)
+                (mode mode))
+    (deferred:$
+      (eltweet--deferred-quote-from-uri uri)
+      (deferred:nextc it
+        (lambda (parsed)
+          (eltweet--insert-as-x (list parsed) mode)))
+      (deferred:nextc it
+        (message "[Eltweet]: here is your tweet!"))
+      (deferred:error it
+        (lambda (err)
+          (message "%s" err))))))
 
 (provide 'eltweet)
 ;;; eltweet.el ends here
