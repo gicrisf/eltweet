@@ -6,7 +6,7 @@
 ;; Maintainer: gicrisf <giovanni.crisalfi@protonmail.com>
 ;; Created: marzo 15, 2022
 ;; Modified: marzo 15, 2022
-;; Version: 0.1.3
+;; Version: 0.1.4
 ;; Keywords: abbrev hypermedia tweet twitter social blog
 ;; Homepage: https://github.com/cromo/eltweet
 ;; Package-Requires: ((emacs "27.1"))
@@ -171,16 +171,6 @@
         (lambda (err)
           (message "%s" err))))))
 
-(defun eltweet--insert-as-html (tweet-list)
-  "Get a TWEET-LIST and print every element as html."
-  (if (null tweet-list)
-      (message "Eltweet: no more tweets left to print.")
-    (insert (cdr (assq 'html (car tweet-list))))
-    ;; add some space if the thread is still going
-    (when (> (length tweet-list) 1)
-      (insert "\n"))
-    (eltweet--insert-as-html (cdr tweet-list))))
-
 (defun eltweet--insert-as-simple-text (tweet-list)
   "Get a TWEET-LIST and print every element as html."
   (if (null tweet-list)
@@ -194,26 +184,6 @@
     (when (> (length tweet-list) 1)
       (insert "\n"))
     (eltweet--insert-as-simple-text (cdr tweet-list))))
-
-(defun eltweet--insert-as-org (tweet-list)
-  "Get a TWEET-LIST and print every element as html."
-  (if (null tweet-list)
-      (message "Eltweet: no more tweets left to print.")
-    (let* ((html (cdr (assq 'html (car tweet-list))))
-           (html-tree (eltweet--parse-html-string html))
-           (begin-position (point))
-           (strings (dom-strings html-tree))
-           (links (dom-by-tag html-tree 'a)))
-      (insert "#+begin_quote\n")
-      (insert (with-temp-buffer
-                (eltweet--orgwriter strings links)
-                (buffer-string)))
-      (insert "#+end_quote\n")
-      (eltweet--indent begin-position (point)))
-    ;; add some space if the thread is still going
-    (when (> (length tweet-list) 1)
-      (insert "\n"))
-    (eltweet--insert-as-org (cdr tweet-list))))
 
 (defun eltweet-quote-as-org (uri)
   "Quote a tweet in your buffer with just the URI."
@@ -293,6 +263,62 @@ MODE is an optional parameter specifying the major mode for the buffer."
           (eltweet--insert-as-x (list parsed) mode)))
       (deferred:nextc it
         (message "[Eltweet]: here is your tweet!"))
+      (deferred:error it
+        (lambda (err)
+          (message "%s" err))))))
+
+(defun eltweet--insert-as-org (tweet-list)
+  "Get a TWEET-LIST and print every element as html."
+  (if (null tweet-list)
+      (message "[Eltweet]: no more tweets left to print.")
+    (let* ((html (cdr (assq 'html (car tweet-list))))
+           (html-tree (eltweet--parse-html-string html))
+           (begin-position (point))
+           (strings (dom-strings html-tree))
+           (links (dom-by-tag html-tree 'a)))
+      (insert "\n#+begin_quote\n")
+      (insert (with-temp-buffer
+                (eltweet--orgwriter strings links)
+                (buffer-string)))
+      (insert "#+end_quote\n")
+      (eltweet--indent begin-position (point))
+      (eltweet--insert-as-org (cdr tweet-list)))))
+
+(defun eltweet--insert-as-html (tweet-list)
+  "Get a TWEET-LIST and print every element as html."
+  (if (null tweet-list)
+      (message "Eltweet: no more tweets left to print.")
+    (let ((begin-position (point))
+          (html (cdr (assq 'html (car tweet-list)))))
+      (insert "\n")
+      (insert html)
+      (eltweet--indent begin-position (point))
+      (eltweet--insert-as-html (cdr tweet-list)))))
+
+(defun eltweet--async-batch-quote-as-x (thread &optional mode)
+  "Quote a thread in your buffer asynchronously.
+THREAD is a list of URLs of the tweets you want to quote;
+MODE is an optional parameter specifying the major mode for the buffer."
+  ;; thread must be from older to newer, in this case
+  (lexical-let ((thread (reverse thread))
+                (mode mode))
+    (deferred:$
+      (if (null thread)
+          (message "[Eltweet]: stop; thread's over.")
+        (deferred:$
+          (deferred:parallel
+            (append
+             (mapcar
+              (lambda (twt)
+                (eltweet--deferred-quote-from-uri (car twt))) thread)))
+          (deferred:error it
+            (lambda (err)
+              (message "[Eltweet] batch parallel download: %s" err)))))
+      (deferred:nextc it
+        (lambda (parsed-thread)
+          (eltweet--insert-as-x parsed-thread mode)))
+      (deferred:nextc it
+        (message "[Eltweet]: here are your tweets!"))
       (deferred:error it
         (lambda (err)
           (message "%s" err))))))
